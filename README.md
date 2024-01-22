@@ -60,6 +60,7 @@
 
 정상 url
 - 화이트 리스트 (전체, 기관) 필요
+- 사람들이 가장 많이 사용하는 Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
 
 
 ## 📂 Directory Structure
