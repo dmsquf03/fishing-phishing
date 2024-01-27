@@ -6,19 +6,22 @@
 
 # ✨ Fishing Phishing Structure
 
+### App/Web Structure
 <img width="777" alt="image" src="https://github.com/dmsquf03/fishing-phishing/assets/99008137/6f67057e-6a9d-4618-b1cb-6634f61d6c4c">
-<img width="776" alt="image" src="https://github.com/dmsquf03/fishing-phishing/assets/99008137/82c3abe0-cb76-4f13-a357-f0e4f4cd2fa3">
+<br>
 
+### ML Structure
+<img width="776" alt="image" src="https://github.com/dmsquf03/fishing-phishing/assets/99008137/82c3abe0-cb76-4f13-a357-f0e4f4cd2fa3">
 <br>
 
 ## 🗄️ Dataset
 
 + 스팸 문자
- /- KT 통신 빅데이터 플랫폼, 한국진흥원, https://www.bigdata-telecom.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000022
+-- KT 통신 빅데이터 플랫폼, 한국진흥원, https://www.bigdata-telecom.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000022
 + 피싱사이트 url
- /- 피싱공격, 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원
+-- 피싱공격, 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원
 + 정상사이트 url
- /- Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
+-- Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
 <br>
 
 ## 📂 Directory Structure
