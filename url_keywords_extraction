@@ -598,8 +598,5 @@ def search_in_model(url):
     url_info = fe.getFeaturesList()
     url_features = np.array(url_info)
     result = model.predict(url_features.reshape(1, -1))
-    if result == 0:
-        return 0
-    else:
-        return 1
+    return result
         
