@@ -1,10 +1,13 @@
 import pandas as pd
+import numpy as np
 import re
 import requests
 import logging
 from tqdm import tqdm
 import ssl
 import joblib
+import warnings
+warnings.filterwarnings('ignore')
 
 ######### 키워드 추출 ##############
 # 파이어베이스에서 'keyword' 노드의 데이터를 불러옴
@@ -52,7 +55,6 @@ def find_category(category, key_tokens_index, category_num):
 def extract_urls_1(text_tokens):
     
     urls = []
-    
     url_pattern = re.compile(r'\b(?:https?://|www\.)\S+\b')
 
     # 정규 표현식과 매치되는 모든 URL 추출
@@ -62,11 +64,11 @@ def extract_urls_1(text_tokens):
             urls.append(token)
     return urls
 
-def extract_urls_2(token, urls2):
+def extract_urls_2(token):
     try:
         response = requests.get('https://' + token, timeout=3, verify=False)
         if response.status_code == 200:
-            urls2.append(token)
+            token = "https://"+token
             return token
     except Exception as e:
         logging.error(f"HTTPS 연결 오류 - {token}: {e}")
@@ -75,67 +77,56 @@ def extract_urls_2(token, urls2):
     try:
         response = requests.get('http://' + token, timeout=3)
         if response.status_code == 200:
-            urls2.append(token)
+            token = "http://"+token
             return token
     except Exception as e:
         logging.error(f"HTTP 연결 오류 - {token}: {e}")
+        
 
 
 ############ 최종 판별 함수 ##############
-def url_keywords_extraction(text):
-    #text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
+def url_keywords_extraction(text, keywordDf):
+
+    
     text_tokens = list(text.split())
     
     # URL 추출
     urls1 = extract_urls_1(text_tokens)
+    urls2 = []
     for token in text_tokens:
-        urls2 = [] 
-        extract_urls_2(token, urls2)
+        urls2.append(extract_urls_2(token))
     
     # 추출된 url 리스트
     urls = urls1+urls2
+    urls = [url for url in urls if url is not None]
     
     if len(urls) <= 0:
-        return "스미싱 위험도 낮음"
+        return "url x 스미싱 위험도 낮음"
     
     # 키워드 추출 및 키워드의 카테고리 찾기
-    keywords, keywords_index = extract_keywords(text_tokens, keywords)
+    keywords, keywords_index = extract_keywords(text_tokens, keywordDf)
     
     # 키워드가 없을 경우 - ML 돌리기
     if len(keywords) <= 0:
         for url in urls:
             result = search_in_model(url)
             if result == 1:
-                return "스미싱 위험도 높음"
-        return "스미싱 위험도 낮음"
+                return "ml 스미싱 위험도 높음"
+        return "ml 스미싱 위험도 낮음"
 
 
     url_dataset_num = find_category(category, keywords_index, category_num)
 
-    db_result = []
     for url in urls:
-        for url_num in url_dataset_num:
-            result = search_in_firebase(url_num, url)
-            if result:
-                db_result.append(result)
-                break
-
-    if len(urls) == len(db_result):
-        return "스미싱 위험도 낮음"
+        result = search_in_firebase(url_dataset_num, url)
+        return "db 스미싱 위험도 낮음"
+            
     else:
         for url in urls:
             result = search_in_model(url)
             if result == 1:
-                return "스미싱 위험도 높음"
-        return "스미싱 위험도 낮음"
-
-
-############# 최종 결과 출력 함수 ##############
-def url_result_print(keywords):
-    # 문자 전체 텍스트 입력
-    
-       
-
+                return "db - ml스미싱 위험도 높음"
+        return "db-ml 스미싱 위험도 낮음"
 
 ############## 리턴 값에 따른 스미싱 판단 ##############
 # 1. url 없음 -> 스미싱 아님 출력
@@ -145,20 +136,21 @@ def url_result_print(keywords):
 ############## whitelist 대조 ##############
 # URL whitelist 검색 함수 / 입력 (카테고리 리스트, 검색할 url) / 반환 (카테고리, 해당 Url의 Name값)
 def search_in_firebase(node_names, search_url):
+    
     for node_name in node_names:
         # 해당 노드의 참조를 가져옴
         whitelist_ref = db.reference(f'whitelist/{node_name}')
         
         # 참조에서 전체 데이터를 가져옴
-        whitelist_data = ref.get()
+        whitelist_data = whitelist_ref.get()
 
         # 데이터가 없으면 다음 노드로 계속
-        if not data:
+        if not whitelist_data:
             continue
         
         # 데이터를 순회하며 검색 URL이 있는지 확인
         for key, value in whitelist_data.items():
-            if 'url' in value and value['url'] == search_url:
+            if 'Url' in value and value['Url'] == search_url:
                 # 'Name' 값과 함께 반환, 'Name' 필드가 없을 경우 None 반환
                 return True
 
@@ -620,7 +612,7 @@ class FeatureExtraction:
 
 ############# ML Model에 넣기 ##############
 def search_in_model(url):
-    model = joblib.load('DB/url_classification_model_DecisionTree.pkl')
+    model = joblib.load('./url_classification_model_DecisionTree.pkl')
     fe = FeatureExtraction(url)
     url_info = fe.getFeaturesList()
     url_features = np.array(url_info)
