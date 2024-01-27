@@ -17,10 +17,17 @@
 ## 🗄️ Dataset
 
 + 스팸 문자
+<br>
 -- KT 통신 빅데이터 플랫폼, 한국진흥원, https://www.bigdata-telecom.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000022
+  <br>
 + 피싱사이트 url
--- 피싱공격, 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원
+<br>
+-- 피싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원, https://bdp.kt.co.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000008
+  <br>
+-- 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원, https://bdp.kt.co.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000009
+  <br>
 + 정상사이트 url
++ <br>
 -- Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
 <br>
 
