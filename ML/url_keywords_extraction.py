@@ -1,0 +1,620 @@
+import pandas as pd
+import numpy as np
+import re
+import requests
+import logging
+from tqdm import tqdm
+import ssl
+import joblib
+import warnings
+warnings.filterwarnings('ignore')
+
+######### 키워드 추출 ##############
+# 파이어베이스에서 'keyword' 노드의 데이터를 불러옴
+keyword_ref = db.reference('keyword')
+keywordsData = keyword_ref.get()
+
+# 데이터를 DataFrame으로 변환
+keywords_list = []
+for key, value in keywordsData.items():
+    keywords_list.append(value)
+
+keywordsDf = pd.DataFrame(keywords_list)
+
+# 'Keywords'와 'return' 칼럼 추출
+keywords = keywordsDf['Keywords']
+category = keywordsDf['return']
+
+category_num = []
+
+def extract_keywords(text_tokens, keywords):
+    i = 0
+    extracted_words = []   # 문자 텍스트 내에 포함되어 있는 키워드를 포함하고 있는 단어 리스트
+    key_tokens = []        # 문자 텍스트 내에 포함되어 있는 키워드 리스트
+    key_tokens_index = []  # 문자 텍스트 내에 포함되어 있는 키워드가 keywords DataFrame에서 몇번째 인덱스인지
+    for word in text_tokens:
+        for i in range(len(keywords)):
+            if keywords[i] in word:
+                extracted_words.append(word)
+                key_tokens.append(keywords[i])
+                key_tokens_index.append(i)
+    
+    return key_tokens, key_tokens_index
+
+
+######### 키워드의 카테고리 추출 #############
+def find_category(category, key_tokens_index, category_num):
+    for index in key_tokens_index:
+        category_num.append(category[index])
+    category_num = set(category_num)
+    category_num = list(category_num)
+    return category_num
+
+
+########### url 추출 #############
+def extract_urls_1(text_tokens):
+    
+    urls = []
+    url_pattern = re.compile(r'\b(?:https?://|www\.)\S+\b')
+
+    # 정규 표현식과 매치되는 모든 URL 추출
+    for token in text_tokens:
+        result = re.match(url_pattern, token)
+        if result != None:
+            urls.append(token)
+    return urls
+
+def extract_urls_2(token):
+    try:
+        response = requests.get('https://' + token, timeout=3, verify=False)
+        if response.status_code == 200:
+            token = "https://"+token
+            return token
+    except Exception as e:
+        logging.error(f"HTTPS 연결 오류 - {token}: {e}")
+        
+    
+    try:
+        response = requests.get('http://' + token, timeout=3)
+        if response.status_code == 200:
+            token = "http://"+token
+            return token
+    except Exception as e:
+        logging.error(f"HTTP 연결 오류 - {token}: {e}")
+        
+
+
+############ 최종 판별 함수 ##############
+def url_keywords_extraction(text, keywordDf):
+
+    
+    text_tokens = list(text.split())
+    
+    # URL 추출
+    urls1 = extract_urls_1(text_tokens)
+    urls2 = []
+    for token in text_tokens:
+        urls2.append(extract_urls_2(token))
+    
+    # 추출된 url 리스트
+    urls = urls1+urls2
+    urls = [url for url in urls if url is not None]
+    
+    if len(urls) <= 0:
+        return "url x 스미싱 위험도 낮음"
+    
+    # 키워드 추출 및 키워드의 카테고리 찾기
+    keywords, keywords_index = extract_keywords(text_tokens, keywordDf)
+    
+    # 키워드가 없을 경우 - ML 돌리기
+    if len(keywords) <= 0:
+        for url in urls:
+            result = search_in_model(url)
+            if result == 1:
+                return "ml 스미싱 위험도 높음"
+        return "ml 스미싱 위험도 낮음"
+
+
+    url_dataset_num = find_category(category, keywords_index, category_num)
+
+    for url in urls:
+        result = search_in_firebase(url_dataset_num, url)
+        return "db 스미싱 위험도 낮음"
+            
+    else:
+        for url in urls:
+            result = search_in_model(url)
+            if result == 1:
+                return "db - ml스미싱 위험도 높음"
+        return "db-ml 스미싱 위험도 낮음"
+
+############## 리턴 값에 따른 스미싱 판단 ##############
+# 1. url 없음 -> 스미싱 아님 출력
+# 2. 키워드 없음 -> ML 판단 -> 결과 출력
+# 3. 키워드 있음 -> 키워드 카테고리 whitelist 대조 -> (whitelist에 해당 url 없으면) ML 판단 -> 결과 출력
+
+############## whitelist 대조 ##############
+# URL whitelist 검색 함수 / 입력 (카테고리 리스트, 검색할 url) / 반환 (카테고리, 해당 Url의 Name값)
+def search_in_firebase(node_names, search_url):
+    
+    for node_name in node_names:
+        # 해당 노드의 참조를 가져옴
+        whitelist_ref = db.reference(f'whitelist/{node_name}')
+        
+        # 참조에서 전체 데이터를 가져옴
+        whitelist_data = whitelist_ref.get()
+
+        # 데이터가 없으면 다음 노드로 계속
+        if not whitelist_data:
+            continue
+        
+        # 데이터를 순회하며 검색 URL이 있는지 확인
+        for key, value in whitelist_data.items():
+            if 'Url' in value and value['Url'] == search_url:
+                # 'Name' 값과 함께 반환, 'Name' 필드가 없을 경우 None 반환
+                return True
+
+    return False  # URL이 데이터베이스에 없음
+
+############ feature 추출 함수 ###############
+# 피처 추출
+import ipaddress
+import re
+import urllib.request
+from bs4 import BeautifulSoup
+import socket
+import requests
+from googlesearch import search
+import whois
+from datetime import date, datetime
+import time
+from dateutil.parser import parse as date_parse
+from urllib.parse import urlparse
+
+class FeatureExtraction:
+    features = []
+    def __init__(self,url):
+        self.features = []
+        self.url = url
+        self.domain = ""
+        self.whois_response = ""
+        self.urlparse = ""
+        self.response = ""
+        self.soup = ""
+
+        try:
+            self.response = requests.get(url)
+            self.soup = BeautifulSoup(self.response.text, 'html.parser')
+        except Exception as e:
+            print(f"Error creating BeautifulSoup object: {e}")
+            self.soup = None
+
+        try:
+            self.urlparse = urlparse(url)
+            self.domain = self.urlparse.netloc
+        except:
+            pass
+
+        try:
+            self.whois_response = whois.whois(self.domain)
+        except:
+            pass
+
+        self.features.append(self.UsingIp())
+        self.features.append(self.longUrl())
+        self.features.append(self.shortUrl())
+        self.features.append(self.symbol())
+        self.features.append(self.redirecting())
+        self.features.append(self.prefixSuffix())
+        self.features.append(self.SubDomains())
+        self.features.append(self.Hppts())
+        self.features.append(self.DomainRegLen())
+        self.features.append(self.Favicon())
+
+        self.features.append(self.NonStdPort())
+        self.features.append(self.HTTPSDomainURL())
+        self.features.append(self.RequestURL())
+        self.features.append(self.AnchorURL())
+        self.features.append(self.LinksInScriptTags())
+        self.features.append(self.ServerFormHandler())
+        self.features.append(self.InfoEmail())
+        self.features.append(self.WebsiteForwarding())
+        self.features.append(self.StatusBarCust())
+
+        self.features.append(self.UsingPopupWindow())
+        self.features.append(self.IframeRedirection())
+        self.features.append(self.AgeofDomain())
+        self.features.append(self.DNSRecording())
+        self.features.append(self.LinksPointingToPage())
+        self.features.append(self.StatsReport())
+
+
+    # 1.UsingIp
+    def UsingIp(self):
+        try:
+            # 도메인에서 포트 번호를 제거합니다.
+            domain_without_port = self.domain.split(':')[0]
+            ipaddress.ip_address(domain_without_port)
+            return -1
+        except:
+            return 1
+
+    # 2.longUrl
+    def longUrl(self):
+        if len(self.url) < 54:
+            return 1
+        if len(self.url) >= 54 and len(self.url) <= 75:
+            return 0
+        return -1
+
+    # 3.shortUrl
+    def shortUrl(self):
+        match = re.search('bit\.ly|goo\.gl|shorte\.st|go2l\.ink|x\.co|ow\.ly|t\.co|tinyurl|tr\.im|is\.gd|cli\.gs|'
+                    'yfrog\.com|migre\.me|ff\.im|tiny\.cc|url4\.eu|twit\.ac|su\.pr|twurl\.nl|snipurl\.com|'
+                    'short\.to|BudURL\.com|ping\.fm|post\.ly|Just\.as|bkite\.com|snipr\.com|fic\.kr|loopt\.us|'
+                    'doiop\.com|short\.ie|kl\.am|wp\.me|rubyurl\.com|om\.ly|to\.ly|bit\.do|t\.co|lnkd\.in|'
+                    'db\.tt|qr\.ae|adf\.ly|goo\.gl|bitly\.com|cur\.lv|tinyurl\.com|ow\.ly|bit\.ly|ity\.im|'
+                    'q\.gs|is\.gd|po\.st|bc\.vc|twitthis\.com|u\.to|j\.mp|buzurl\.com|cutt\.us|u\.bb|yourls\.org|'
+                    'x\.co|prettylinkpro\.com|scrnch\.me|filoops\.info|vzturl\.com|qr\.net|1url\.com|tweez\.me|v\.gd|tr\.im|link\.zip\.net', self.url)
+        if match:
+            return -1
+        return 1
+
+    # 4.Symbol@
+    def symbol(self):
+        if re.findall("@",self.url):
+            return -1
+        return 1
+    
+    # 5.Redirecting//
+    def redirecting(self):
+        if self.url.rfind('//')>6:
+            return -1
+        return 1
+    
+    # 6.prefixSuffix
+    def prefixSuffix(self):
+        try:
+            match = re.findall('\-', self.domain)
+            if match:
+                return -1
+            return 1
+        except:
+            return -1
+    
+    # 7.SubDomains
+    def SubDomains(self):
+        dot_count = len(re.findall("\.", self.url))
+        if dot_count == 1:
+            return 1
+        elif dot_count == 2:
+            return 0
+        return -1
+
+    # 8.HTTPS
+    def Hppts(self):
+        try:
+            https = self.urlparse.scheme
+            if 'https' in https:
+                return 1
+            return -1
+        except:
+            return 1
+
+    # 9.DomainRegLen
+    def DomainRegLen(self):
+        try:
+            expiration_date = self.whois_response.expiration_date
+            creation_date = self.whois_response.creation_date
+            try:
+                if(len(expiration_date)):
+                    expiration_date = expiration_date[0]
+            except:
+                pass
+            try:
+                if(len(creation_date)):
+                    creation_date = creation_date[0]
+            except:
+                pass
+
+            age = (expiration_date.year-creation_date.year)*12+ (expiration_date.month-creation_date.month)
+            if age >=12:
+                return 1
+            return -1
+        except:
+            return -1
+
+    # 10. Favicon
+    def Favicon(self):
+        if self.soup == None:
+            return 2
+        try:
+            for head in self.soup.find_all('head'):
+                for link in head.find_all('link', href=True):
+                    favicon_url = link['href']
+                    # 상대 경로를 절대 경로로 변환
+                    if favicon_url.startswith('/'):
+                        favicon_url = urllib.parse.urljoin(self.url, favicon_url)
+                    dots = [x.start(0) for x in re.finditer('\.', favicon_url)]
+                    if self.url in favicon_url or len(dots) == 1 or self.domain in favicon_url:
+                        return 1
+            return -1
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return -1
+
+
+    # 11. NonStdPort
+    def NonStdPort(self):
+        try:
+            port = self.domain.split(":")
+            if len(port)>1:
+                return -1
+            return 1
+        except:
+            return -1
+
+    # 12. HTTPSDomainURL
+    def HTTPSDomainURL(self):
+        try:
+            if 'https' in self.url:
+                return -1
+            return 1
+        except:
+            return -1
+    
+    # 13. RequestURL
+    def RequestURL(self):
+        if self.soup == None:
+            return 2
+        try:
+            for img in self.soup.find_all('img', src=True):
+                dots = [x.start(0) for x in re.finditer('\.', img['src'])]
+                if self.url in img['src'] or self.domain in img['src'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            for audio in self.soup.find_all('audio', src=True):
+                dots = [x.start(0) for x in re.finditer('\.', audio['src'])]
+                if self.url in audio['src'] or self.domain in audio['src'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            for embed in self.soup.find_all('embed', src=True):
+                dots = [x.start(0) for x in re.finditer('\.', embed['src'])]
+                if self.url in embed['src'] or self.domain in embed['src'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            for iframe in self.soup.find_all('iframe', src=True):
+                dots = [x.start(0) for x in re.finditer('\.', iframe['src'])]
+                if self.url in iframe['src'] or self.domain in iframe['src'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            try:
+                percentage = success/float(i) * 100
+                if percentage < 22.0:
+                    return 1
+                elif((percentage >= 22.0) and (percentage < 61.0)):
+                    return 0
+                else:
+                    return -1
+            except:
+                return 0
+        except:
+            return -1
+    
+    # 14. AnchorURL
+    def AnchorURL(self):
+        if self.soup == None:
+            return 2
+        try:
+            i,unsafe = 0,0
+            for a in self.soup.find_all('a', href=True):
+                if "#" in a['href'] or "javascript" in a['href'].lower() or "mailto" in a['href'].lower() or not (url in a['href'] or self.domain in a['href']):
+                    unsafe = unsafe + 1
+                i = i + 1
+
+            try:
+                percentage = unsafe / float(i) * 100
+                if percentage < 31.0:
+                    return 1
+                elif ((percentage >= 31.0) and (percentage < 67.0)):
+                    return 0
+                else:
+                    return -1
+            except:
+                return -1
+
+        except:
+            return -1
+
+    # 15. LinksInScriptTags
+    def LinksInScriptTags(self):
+        if self.soup == None:
+            return 2
+        try:
+            i,success = 0,0
+        
+            for link in self.soup.find_all('link', href=True):
+                dots = [x.start(0) for x in re.finditer('\.', link['href'])]
+                if self.url in link['href'] or self.domain in link['href'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            for script in self.soup.find_all('script', src=True):
+                dots = [x.start(0) for x in re.finditer('\.', script['src'])]
+                if self.url in script['src'] or self.domain in script['src'] or len(dots) == 1:
+                    success = success + 1
+                i = i+1
+
+            try:
+                percentage = success / float(i) * 100
+                if percentage < 17.0:
+                    return 1
+                elif((percentage >= 17.0) and (percentage < 81.0)):
+                    return 0
+                else:
+                    return -1
+            except:
+                return 0
+        except:
+            return -1
+
+    # 16. ServerFormHandler
+    def ServerFormHandler(self):
+        if self.soup == None:
+            return 2
+        try:
+            if len(self.soup.find_all('form', action=True))==0:
+                return 1
+            else :
+                for form in self.soup.find_all('form', action=True):
+                    if form['action'] == "" or form['action'] == "about:blank":
+                        return -1
+                    elif self.url not in form['action'] and self.domain not in form['action']:
+                        return 0
+                    else:
+                        return 1
+        except:
+            return -1
+
+    # 17. InfoEmail
+    def InfoEmail(self):
+        if self.soup == None:
+            return 2
+        try:
+            if re.findall(r"mailto:", self.soup):
+                return -1
+            else:
+                return 1
+        except:
+            return -1
+
+    # 18. WebsiteForwarding
+    def WebsiteForwarding(self):
+        try:
+            if len(self.response.history) <= 1:
+                return 1
+            elif len(self.response.history) <= 4:
+                return 0
+            else:
+                return -1
+        except:
+             return -1
+
+    # 19. StatusBarCust
+    def StatusBarCust(self):
+        try:
+            if re.findall("<script>.+onmouseover.+</script>", self.response.text):
+                return 1
+            else:
+                return -1
+        except:
+             return -1
+
+    # 20. UsingPopupWindow
+    def UsingPopupWindow(self):
+        try:
+            if re.findall(r"alert\(", self.response.text):
+                return 1
+            else:
+                return -1
+        except:
+             return -1
+
+    # 21. IframeRedirection
+    def IframeRedirection(self):
+        try:
+            if re.findall(r"[<iframe>|<frameBorder>]", self.response.text):
+                return 1
+            else:
+                return -1
+        except:
+             return -1
+
+    # 22. AgeofDomain
+    def AgeofDomain(self):
+        try:
+            creation_date = self.whois_response.creation_date
+            try:
+                if(len(creation_date)):
+                    creation_date = creation_date[0]
+            except:
+                pass
+
+            today  = date.today()
+            age = (today.year-creation_date.year)*12+(today.month-creation_date.month)
+            if age >=6:
+                return 1
+            return -1
+        except:
+            return -1
+
+    # 23. DNSRecording    
+    def DNSRecording(self):
+        try:
+            creation_date = self.whois_response.creation_date
+            try:
+                if(len(creation_date)):
+                    creation_date = creation_date[0]
+            except:
+                pass
+
+            today  = date.today()
+            age = (today.year-creation_date.year)*12+(today.month-creation_date.month)
+            if age >=6:
+                return 1
+            return -1
+        except:
+            return -1
+
+    # 24. LinksPointingToPage
+    def LinksPointingToPage(self):
+        try:
+            number_of_links = len(re.findall(r"<a href=", self.response.text))
+            if number_of_links == 0:
+                return 1
+            elif number_of_links <= 2:
+                return 0
+            else:
+                return -1
+        except:
+            return -1
+
+    # 25. StatsReport
+    def StatsReport(self):
+        try:
+            url_match = re.search(
+        'at\.ua|usa\.cc|baltazarpresentes\.com\.br|pe\.hu|esy\.es|hol\.es|sweddy\.com|myjino\.ru|96\.lt|ow\.ly', self.url)
+            try:
+                ip_address = socket.gethostbyname(self.domain)
+            except Exception as e:
+                print(f"Error in DNS lookup: {e}")
+
+            ip_match = re.search('146\.112\.61\.108|213\.174\.157\.151|121\.50\.168\.88|192\.185\.217\.116|78\.46\.211\.158|181\.174\.165\.13|46\.242\.145\.103|121\.50\.168\.40|83\.125\.22\.219|46\.242\.145\.98|'
+                                '107\.151\.148\.44|107\.151\.148\.107|64\.70\.19\.203|199\.184\.144\.27|107\.151\.148\.108|107\.151\.148\.109|119\.28\.52\.61|54\.83\.43\.69|52\.69\.166\.231|216\.58\.192\.225|'
+                                '118\.184\.25\.86|67\.208\.74\.71|23\.253\.126\.58|104\.239\.157\.210|175\.126\.123\.219|141\.8\.224\.221|10\.10\.10\.10|43\.229\.108\.32|103\.232\.215\.140|69\.172\.201\.153|'
+                                '216\.218\.185\.162|54\.225\.104\.146|103\.243\.24\.98|199\.59\.243\.120|31\.170\.160\.61|213\.19\.128\.77|62\.113\.226\.131|208\.100\.26\.234|195\.16\.127\.102|195\.16\.127\.157|'
+                                '34\.196\.13\.28|103\.224\.212\.222|172\.217\.4\.225|54\.72\.9\.51|192\.64\.147\.141|198\.200\.56\.183|23\.253\.164\.103|52\.48\.191\.26|52\.214\.197\.72|87\.98\.255\.18|209\.99\.17\.27|'
+                                '216\.38\.62\.18|104\.130\.124\.96|47\.89\.58\.141|78\.46\.211\.158|54\.86\.225\.156|54\.82\.156\.19|37\.157\.192\.102|204\.11\.56\.48|110\.34\.231\.42', ip_address)
+            if url_match:
+                return -1
+            elif ip_match:
+                return -1
+            return 1
+        except:
+            return 1
+    
+    def getFeaturesList(self):
+        return self.features
+
+############# ML Model에 넣기 ##############
+def search_in_model(url):
+    model = joblib.load('./url_classification_model_DecisionTree.pkl')
+    fe = FeatureExtraction(url)
+    url_info = fe.getFeaturesList()
+    url_features = np.array(url_info)
+    result = model.predict(url_features.reshape(1, -1))
+    return result
