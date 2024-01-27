@@ -7,7 +7,18 @@ import ssl
 
 
 ######### 키워드 추출 ##############
-keywordsDf = pd.read_csv('./keywords_list.csv')
+# 파이어베이스에서 'keyword' 노드의 데이터를 불러옴
+keyword_ref = db.reference('keyword')
+keywordsData = keyword_ref.get()
+
+# 데이터를 DataFrame으로 변환
+keywords_list = []
+for key, value in keywordsData.items():
+    keywords_list.append(value)
+
+keywordsDf = pd.DataFrame(keywords_list)
+
+# 'Keywords'와 'return' 칼럼 추출
 keywords = keywordsDf['Keywords']
 category = keywordsDf['return']
 
@@ -71,7 +82,7 @@ def extract_urls_2(token, urls2):
 
 
 ############ 최종 함수 ##############
-def url_keywords_extraction():
+def url_keywords_extraction(keywords):
     
     # 문자 전체 텍스트 입력
     text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
