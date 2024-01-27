@@ -82,7 +82,7 @@ def extract_urls_2(token, urls2):
 
 
 ############ 최종 판별 함수 ##############
-def url_keywords_extraction(text, keywords):
+def url_keywords_extraction(text):
     #text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
     text_tokens = list(text.split())
     
