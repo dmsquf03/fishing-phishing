@@ -1,0 +1,100 @@
+import pandas as pd
+import re
+import requests
+import logging
+from tqdm import tqdm
+import ssl
+
+
+######### 키워드 추출 ##############
+keywordsDf = pd.read_csv('./keywords_list.csv')
+keywords = keywordsDf['Keywords']
+category = keywordsDf['return']
+
+category_num = []
+
+def extract_keywords(text_tokens, keywords):
+    i = 0
+    extracted_words = []   # 문자 텍스트 내에 포함되어 있는 키워드를 포함하고 있는 단어 리스트
+    key_tokens = []        # 문자 텍스트 내에 포함되어 있는 키워드 리스트
+    key_tokens_index = []  # 문자 텍스트 내에 포함되어 있는 키워드가 keywords DataFrame에서 몇번째 인덱스인지
+    for word in text_tokens:
+        for i in range(len(keywords)):
+            if keywords[i] in word:
+                extracted_words.append(word)
+                key_tokens.append(keywords[i])
+                key_tokens_index.append(i)
+    
+    return key_tokens, key_tokens_index
+
+
+######### 키워드의 카테고리 추출 #############
+def find_category(category, key_tokens_index, category_num):
+    for index in key_tokens_index:
+        category_num.append(category[index])
+    category_num = set(category_num)
+    category_num = list(category_num)
+    return category_num
+
+
+########### url 추출 #############
+def extract_urls_1(text_tokens):
+    
+    urls = []
+    
+    url_pattern = re.compile(r'\b(?:https?://|www\.)\S+\b')
+
+    # 정규 표현식과 매치되는 모든 URL 추출
+    for token in text_tokens:
+        result = re.match(url_pattern, token)
+        if result != None:
+            urls.append(token)
+    return urls
+
+def extract_urls_2(token, urls2):
+    try:
+        response = requests.get('https://' + token, timeout=3, verify=False)
+        if response.status_code == 200:
+            urls2.append(token)
+            return token
+    except Exception as e:
+        logging.error(f"HTTPS 연결 오류 - {token}: {e}")
+        
+    
+    try:
+        response = requests.get('http://' + token, timeout=3)
+        if response.status_code == 200:
+            urls2.append(token)
+            return token
+    except Exception as e:
+        logging.error(f"HTTP 연결 오류 - {token}: {e}")
+
+
+############ 최종 함수 ##############
+def url_keywords_extraction():
+    
+    # 문자 전체 텍스트 입력
+    text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
+    text_tokens = list(text.split())
+    
+    # URL 추출
+    urls1 = extract_urls_1(text_tokens)
+    for token in text_tokens:
+        urls2 = [] 
+        extract_urls_2(token, urls2)
+    
+    # 추출된 url 리스트
+    urls = urls1+urls2
+    
+    if len(urls) <= 0:
+        return "url 없음."
+    
+    # 키워드 추출 및 키워드의 카테고리 찾기
+    keywords, keywords_index = extract_keywords(text_tokens, keywords)
+    
+    # 키워드가 없을 경우
+    if len(keywords) <= 0:
+        return "키워드 없음. 머신러닝 바로 돌리기"
+    
+    url_dataset_num = find_category(category, keywords_index, category_num)
+    return urls, url_dataset_num
