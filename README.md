@@ -6,49 +6,20 @@
 
 # ✨ Fishing Phishing Structure
 
-주 기능
-1. 스미싱 의심 문자 내용을 넣었을 때 스미싱인지 판독해주는 기능
-2. 스미싱 사기의 주 피해자인 4~50대를 위한 스미싱 예방 교육 기능
-3. 신고 사이트, 전화 번호 바로 연결 기능 
+<img width="777" alt="image" src="https://github.com/dmsquf03/fishing-phishing/assets/99008137/6f67057e-6a9d-4618-b1cb-6634f61d6c4c">
+<img width="776" alt="image" src="https://github.com/dmsquf03/fishing-phishing/assets/99008137/82c3abe0-cb76-4f13-a357-f0e4f4cd2fa3">
 
-기능 프로세스 상세 설명
-1번 기능
-- 문자의 URL 존재 유무 판별
-  * URL이 존재하지 않으면 정상 문자로, 존재하면 스미싱 의심 문자로 판별
-  * 스미싱 의심 문자로 판별된 문자는 URL 검사 대상으로 설정
-- URL 검사 대상으로 설정된 문자 텍스트에서 키워드 추출 (기관 리스트 정리 필요)
-  * 특정 기관의 사칭이 의심되는 경우와 가상 기관을 생성한 경우로 구분
-  * 특정 기관의 사칭이 의심되는 경우, 문자의 URL을 화이트 리스트와 비교 (기관의 화이트 리스트 정리 필요) - DB 이용
-  * 가상 기관을 생성한 경우, 룰 기반 악성 URL 판별 모델로 예측 - 머신러닝 모델 이용
-- 최종 결과(스미싱 문자 여부) 보여주기
-  * 스미싱 문자인 경우 신고 탭과 교육 탭 나타남
-  * 스미싱 문자 내용 따로 DB에 저장하기
-
-2번 기능
-카테고리별 스미싱 문자 내용 필요 -> 스미싱 문자 / 스팸 문자 DB 필요
-- 카테고리별로 실제 문자와 가짜 문자 비교해서 보여주기
-  * 내용은 동일한데 URL만 수정한 경우
-  * 내용과 URL 모두 수정한 경우 -> 유사도 검사 이용
-    이 경우, 다른 점을 뽑아서 소개해주기
-
-+) 퀴즈 기능?
-  
-직관적이고 단순하면서도 친절하게!
-
-(3번 기능)
-신고 사이트와 전화 번호 소개
-정부의 기본 대처 방안 소개
-
+<br>
 
 ## 🗄️ Dataset
 
 + 스팸 문자
- - KT 통신 빅데이터 플랫폼, 한국진흥원, https://www.bigdata-telecom.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000022
+ /- KT 통신 빅데이터 플랫폼, 한국진흥원, https://www.bigdata-telecom.kr/invoke/SOKBP2603/?goodsCode=KIS00000000000000022
 + 피싱사이트 url
- - 피싱공격, 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원
+ /- 피싱공격, 스미싱공격 : KT 통신 빅데이터 플랫폼, 한국진흥원
 + 정상사이트 url
- - Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
-
+ /- Top 20000 Domains data  출처: https://radar.cloudflare.com/domains
+<br>
 
 ## 📂 Directory Structure
 
