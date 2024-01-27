@@ -28,6 +28,7 @@ class FeatureExtraction:
             self.soup = BeautifulSoup(self.response.text, 'html.parser')
         except Exception as e:
             print(f"Error creating BeautifulSoup object: {e}")
+            self.soup = None
 
         try:
             self.urlparse = urlparse(url)
@@ -40,9 +41,6 @@ class FeatureExtraction:
         except:
             pass
 
-
-        
-
         self.features.append(self.UsingIp())
         self.features.append(self.longUrl())
         self.features.append(self.shortUrl())
@@ -53,7 +51,6 @@ class FeatureExtraction:
         self.features.append(self.Hppts())
         self.features.append(self.DomainRegLen())
         self.features.append(self.Favicon())
-        
 
         self.features.append(self.NonStdPort())
         self.features.append(self.HTTPSDomainURL())
@@ -170,6 +167,8 @@ class FeatureExtraction:
 
     # 10. Favicon
     def Favicon(self):
+        if self.soup == None:
+            return 2
         try:
             for head in self.soup.find_all('head'):
                 for link in head.find_all('link', href=True):
@@ -207,6 +206,8 @@ class FeatureExtraction:
     
     # 13. RequestURL
     def RequestURL(self):
+        if self.soup == None:
+            return 2
         try:
             for img in self.soup.find_all('img', src=True):
                 dots = [x.start(0) for x in re.finditer('\.', img['src'])]
@@ -247,6 +248,8 @@ class FeatureExtraction:
     
     # 14. AnchorURL
     def AnchorURL(self):
+        if self.soup == None:
+            return 2
         try:
             i,unsafe = 0,0
             for a in self.soup.find_all('a', href=True):
@@ -270,6 +273,8 @@ class FeatureExtraction:
 
     # 15. LinksInScriptTags
     def LinksInScriptTags(self):
+        if self.soup == None:
+            return 2
         try:
             i,success = 0,0
         
@@ -300,6 +305,8 @@ class FeatureExtraction:
 
     # 16. ServerFormHandler
     def ServerFormHandler(self):
+        if self.soup == None:
+            return 2
         try:
             if len(self.soup.find_all('form', action=True))==0:
                 return 1
@@ -316,6 +323,8 @@ class FeatureExtraction:
 
     # 17. InfoEmail
     def InfoEmail(self):
+        if self.soup == None:
+            return 2
         try:
             if re.findall(r"mailto:", self.soup):
                 return -1
