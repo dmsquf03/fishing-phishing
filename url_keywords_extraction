@@ -81,11 +81,9 @@ def extract_urls_2(token, urls2):
         logging.error(f"HTTP 연결 오류 - {token}: {e}")
 
 
-############ url+키워드 최종 함수 ##############
-def url_keywords_extraction(keywords):
-    
-    # 문자 전체 텍스트 입력
-    text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
+############ 최종 판별 함수 ##############
+def url_keywords_extraction(text, keywords):
+    #text = "덕진구민여러분 사랑합니다.새해 가족모두 행복하십시오 정동영올림 택배 하나 naver.com"
     text_tokens = list(text.split())
     
     # URL 추출
@@ -98,17 +96,46 @@ def url_keywords_extraction(keywords):
     urls = urls1+urls2
     
     if len(urls) <= 0:
-        return "url 없음."
+        return "스미싱 위험도 낮음"
     
     # 키워드 추출 및 키워드의 카테고리 찾기
     keywords, keywords_index = extract_keywords(text_tokens, keywords)
     
-    # 키워드가 없을 경우
+    # 키워드가 없을 경우 - ML 돌리기
     if len(keywords) <= 0:
-        return "키워드 없음. 머신러닝 바로 돌리기"
-    
+        for url in urls:
+            result = search_in_model(url)
+            if result == 1:
+                return "스미싱 위험도 높음"
+        return "스미싱 위험도 낮음"
+
+
     url_dataset_num = find_category(category, keywords_index, category_num)
-    return urls, url_dataset_num
+
+    db_result = []
+    for url in urls:
+        for url_num in url_dataset_num:
+            result = search_in_firebase(url_num, url)
+            if result:
+                db_result.append(result)
+                break
+
+    if len(urls) == len(db_result):
+        return "스미싱 위험도 낮음"
+    else:
+        for url in urls:
+            result = search_in_model(url)
+            if result == 1:
+                return "스미싱 위험도 높음"
+        return "스미싱 위험도 낮음"
+
+
+############# 최종 결과 출력 함수 ##############
+def url_result_print(keywords):
+    # 문자 전체 텍스트 입력
+    
+       
+
 
 ############## 리턴 값에 따른 스미싱 판단 ##############
 # 1. url 없음 -> 스미싱 아님 출력
@@ -133,9 +160,9 @@ def search_in_firebase(node_names, search_url):
         for key, value in whitelist_data.items():
             if 'url' in value and value['url'] == search_url:
                 # 'Name' 값과 함께 반환, 'Name' 필드가 없을 경우 None 반환
-                return node_name, value.get('Name')
+                return True
 
-    return None, None  # URL이 데이터베이스에 없음
+    return False  # URL이 데이터베이스에 없음
 
 ############ feature 추출 함수 ###############
 # 피처 추출
@@ -599,4 +626,3 @@ def search_in_model(url):
     url_features = np.array(url_info)
     result = model.predict(url_features.reshape(1, -1))
     return result
-        
